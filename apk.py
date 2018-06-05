@@ -19,9 +19,12 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
+# TODO: Much of this should probably be a class
+
 import xml.etree.ElementTree as ET
 import os.path
 import urllib.request
+from datetime import datetime
 
 def parse_alcohol(alc_as_string):
     if not alc_as_string[-1:] == "%":
@@ -38,18 +41,57 @@ def parse_alcohol(alc_as_string):
 
     return value
 
-products_file_name = "products.xml"
-products_file_url = "https://www.systembolaget.se/api/assortment/products/xml"
+def download_products(products_file_name):
+    products_file_url = "https://www.systembolaget.se/api/assortment/products/xml"
+    print("Downloading product database file...")
+    # Delete the file if already present
+    if os.path.exists(products_file_name):
+        os.unlink(products_file_name)
 
-if not os.path.exists(products_file_name):
-    print("No product database file available, downloading...")
-    urllib.request.urlretrieve(products_file_url, products_file_name)
+    retries = 0
+    max_retries = 3
+    # Try to download the file
+    while not os.path.exists(products_file_name) and retries < max_retries:
+        try:
+            return urllib.request.urlretrieve(products_file_url, products_file_name)
+        except:
+            retries = retries + 1
+    return None
 
-# TODO: Add attribute of when the file was last downloaded, and update if necessary
-tree = ET.parse(products_file_name)
+def open_products():
+    products_file_name = "products.xml"
+
+    if not os.path.exists(products_file_name):
+        print("No product database file available, downloading...")
+        if download_products(products_file_name) is None:
+            print("Could not download product database file")
+            return None
+
+    try:
+        tree = ET.parse(products_file_name)
+        root = tree.getroot()
+    except ET.ParseError as err:
+        (line, column) = err.position
+        print("Parse error on line {}, column {}".format(line, column))
+        return None
+
+    # Check if it's been more than 24hrs since we downloaded last time
+    creation_date_str = root.find('skapad-tid').text
+    creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M")
+    now = datetime.now()
+
+    diff = now - creation_date
+    if diff.days > 0:
+        # And if so, re-download!
+        print("{} days since last database download".format(diff.days))
+        download_products(products_file_name)
+        tree = ET.parse(products_file_name)
+
+    return tree
+
+tree = open_products()
 root = tree.getroot()
-
-apk_values = []
+apk_values=[]
 for artikel in root.findall('.//artikel'):
     nr = artikel.find('nr').text
     name = artikel.find('Namn').text
