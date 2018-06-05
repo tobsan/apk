@@ -27,6 +27,7 @@ def parse_alcohol(alc_as_string):
     if not alc_as_string[-1:] == "%":
         raise ValueError("Not an alcohol percentage, need to end with %")
 
+    # TODO: This would allow 9.3.7.2%
     alc_numbers = alc_as_string[:-1]
     if not all(dig.isdigit() or dig == "." for dig in alc_numbers):
         raise ValueError("Only digits and . allowed in alcohol percentage")
@@ -62,6 +63,11 @@ for artikel in root.findall('.//artikel'):
     # TODO: Save the APK as an XML tag instead, so it can be easily used with other properties of
     # that specific product
     apk_values.append((nr, name, apk))
+
+# TODO: Save to right file name
+# tree.write('test.xml', encoding='unicode')
+
+# TODO: Just read up all apk+name+id from the XML with xpath
 
 #
 # The printout below is just for testing the apk calculation
