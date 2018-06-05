@@ -61,6 +61,10 @@ for artikel in root.findall('.//artikel'):
     cost = float(artikel.find('Prisinklmoms').text)
     alcohol_percent = parse_alcohol(artikel.find('Alkoholhalt').text)
 
+    # Alcohol-free drinks makes this list useless
+    if alcohol_percent == 0:
+        continue
+
     volume = float(artikel.find('Volymiml').text)
     alcohol_ml = volume * (alcohol_percent / 100)
     apk = alcohol_ml / cost
