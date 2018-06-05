@@ -53,6 +53,11 @@ apk_values = []
 for artikel in root.findall('.//artikel'):
     nr = artikel.find('nr').text
     name = artikel.find('Namn').text
+
+    if artikel.get('apk') is not None:
+        apk_values.append((nr, name, artikel.find('apk').text))
+        continue
+
     cost = float(artikel.find('Prisinklmoms').text)
     alcohol_percent = parse_alcohol(artikel.find('Alkoholhalt').text)
 
@@ -60,8 +65,10 @@ for artikel in root.findall('.//artikel'):
     alcohol_ml = volume * (alcohol_percent / 100)
     apk = alcohol_ml / cost
 
-    # TODO: Save the APK as an XML tag instead, so it can be easily used with other properties of
-    # that specific product
+    apk_node = ET.SubElement(artikel, 'apk')
+    apk_node.text = str(apk)
+
+    # Legacy mode
     apk_values.append((nr, name, apk))
 
 # TODO: Save to right file name
