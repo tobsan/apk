@@ -30,11 +30,10 @@ def parse_alcohol(alc_as_string):
     if not alc_as_string[-1:] == "%":
         raise ValueError("Not an alcohol percentage, need to end with %")
 
-    # TODO: This would allow 9.3.7.2%
+    # Shave off the percentage sign
     alc_numbers = alc_as_string[:-1]
-    if not all(dig.isdigit() or dig == "." for dig in alc_numbers):
-        raise ValueError("Only digits and . allowed in alcohol percentage")
 
+    # This will throw ValueError in case it can't be converted
     value = float(alc_numbers)
     if value > 100:
         raise ValueError("Percentage can't be larger than 100%")
