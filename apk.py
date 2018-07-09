@@ -19,8 +19,6 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-# TODO: Much of this should probably be a class
-
 import xml.etree.ElementTree as ET
 import os.path
 import urllib.request
@@ -40,89 +38,119 @@ def parse_alcohol(alc_as_string):
 
     return value
 
-def download_products(products_file_name):
+class APKError(Exception):
+    def __init__(self, expression, message):
+        self.expression = expression
+        self.message = message
+
+class APK:
+    """
+    A class abstracting the XML format for the APK state
+    """
+
     products_file_url = "https://www.systembolaget.se/api/assortment/products/xml"
-    print("Downloading product database file...")
-    # Delete the file if already present
-    if os.path.exists(products_file_name):
-        os.unlink(products_file_name)
 
-    retries = 0
-    max_retries = 3
-    # Try to download the file
-    while not os.path.exists(products_file_name) and retries < max_retries:
-        try:
-            return urllib.request.urlretrieve(products_file_url, products_file_name)
-        except:
-            retries = retries + 1
-    return None
+    def __init__(self, file_name = "products.xml"):
+        self.__products_file_name = file_name
+        self.__tree = None
 
-def open_products():
-    products_file_name = "products.xml"
+        if not os.path.exists(self.__products_file_name):
+            print("No product database file available, downloading...")
+            if not self.__download_products():
+                raise APKError("Could not download product database file")
 
-    if not os.path.exists(products_file_name):
-        print("No product database file available, downloading...")
-        if download_products(products_file_name) is None:
-            print("Could not download product database file")
-            return None
+        if not self.__parse_products_file():
+            raise APKError("Could not open product database file")
 
-    try:
-        tree = ET.parse(products_file_name)
-        root = tree.getroot()
-    except ET.ParseError as err:
-        (line, column) = err.position
-        print("Parse error on line {}, column {}".format(line, column))
+        # TODO: Check for errors?
+        self.__calculate_apk()
+
+    def __download_products(self):
+        """
+            Downloads the product database file from systembolaget's API
+        """
+        print("Downloading product database file...")
+        # Delete the file if already present
+        if os.path.exists(self.__products_file_name):
+            os.unlink(self.__products_file_name)
+
+        retries = 0
+        max_retries = 3
+        # Try to download the file
+        while not os.path.exists(self.__products_file_name) and retries < max_retries:
+            try:
+                return urllib.request.urlretrieve(self.products_file_url, self.__products_file_name)
+            except:
+                retries = retries + 1
         return None
 
-    # Check if it's been more than 24hrs since we downloaded last time
-    creation_date_str = root.find('skapad-tid').text
-    creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M")
-    now = datetime.now()
+    def __parse_products_file(self):
+        try:
+            self.__tree = ET.parse(self.__products_file_name)
+            root = self.__tree.getroot()
+        except ET.ParseError as err:
+            (line, column) = err.position
+            print("Parse error on line {}, column {}".format(line, column))
+            return None
 
-    diff = now - creation_date
-    if diff.days > 0:
-        # And if so, re-download!
-        print("{} days since last database download".format(diff.days))
-        download_products(products_file_name)
-        tree = ET.parse(products_file_name)
+        # Check if it's been more than 24hrs since we downloaded last time
+        creation_date_str = root.find('skapad-tid').text
+        creation_date = datetime.strptime(creation_date_str, "%Y-%m-%d %H:%M")
+        now = datetime.now()
 
-    return tree
+        diff = now - creation_date
+        if diff.days > 0:
+            # And if so, re-download!
+            print("{} days since last database download".format(diff.days))
+            if not self.__download_products():
+                raise APKError("Could not download product database file")
+            return self.__parse_products_file()
 
-tree = open_products()
-root = tree.getroot()
+        return self.__tree
+
+    def __calculate_apk(self):
+        """
+            For every product in the database, calculate the APK value and add it as an xml node to
+            the tree. Then save the tree.
+        """
+        root = self.__tree.getroot()
+        for artikel in root.findall('.//artikel'):
+            nr = artikel.find('nr').text
+            name = artikel.find('Namn').text
+
+            # If an APK value is present in any node, we assume it is present in all nodes, and we
+            # can stop processing here.
+            if artikel.find('apk') is not None:
+                print("Already has APK in file, stopping")
+                break
+
+            cost = float(artikel.find('Prisinklmoms').text)
+            # TODO: Handle possible errors from this call
+            alcohol_percent = parse_alcohol(artikel.find('Alkoholhalt').text)
+
+            # Alcohol-free drinks makes this list useless
+            # TODO: Is this a good idea really?
+            if alcohol_percent == 0:
+                continue
+
+            volume = float(artikel.find('Volymiml').text)
+            alcohol_ml = volume * (alcohol_percent / 100)
+            apk = alcohol_ml / cost
+
+            apk_node = ET.SubElement(artikel, 'apk')
+            apk_node.text = str(apk)
+
+        # Save the apk annotated file
+        self.__tree.write(self.__products_file_name, encoding='unicode')
+
+
 apk_values=[]
-for artikel in root.findall('.//artikel'):
-    nr = artikel.find('nr').text
-    name = artikel.find('Namn').text
-
-    if artikel.get('apk') is not None:
-        apk_values.append((nr, name, artikel.find('apk').text))
-        continue
-
-    cost = float(artikel.find('Prisinklmoms').text)
-    alcohol_percent = parse_alcohol(artikel.find('Alkoholhalt').text)
-
-    # Alcohol-free drinks makes this list useless
-    if alcohol_percent == 0:
-        continue
-
-    volume = float(artikel.find('Volymiml').text)
-    alcohol_ml = volume * (alcohol_percent / 100)
-    apk = alcohol_ml / cost
-
-    apk_node = ET.SubElement(artikel, 'apk')
-    apk_node.text = str(apk)
-
-    # Legacy mode
-    apk_values.append((nr, name, apk))
-
-# TODO: Save to right file name
-# tree.write('test.xml', encoding='unicode')
-
-# TODO: Just read up all apk+name+id from the XML with xpath
+apk = APK()
+# TODO: Retrieval function for APK values
 
 #
 # The printout below is just for testing the apk calculation
+# FIXME: For now, this prints nothing.
 #
 
 print("*** Highest APK products! ***")
